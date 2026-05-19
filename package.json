@@ -1,0 +1,14 @@
+{
+  "name": "war",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "engines": { "node": ">=22" },
+  "pnpm": { "onlyBuiltDependencies": ["esbuild"] },
+  "scripts": {
+    "dev": "pnpm --filter @war/web dev",
+    "build": "pnpm --filter @war/web build",
+    "preview": "pnpm --filter @war/web preview",
+    "typecheck": "pnpm --filter @war/web exec tsc -b",
+    "test": "pnpm --filter @war/web test"
+  }
+}
