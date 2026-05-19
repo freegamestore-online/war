@@ -1,4 +1,4 @@
-# war
+# War
 
 A free game on FreeGameStore.
 
