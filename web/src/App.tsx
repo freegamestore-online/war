@@ -1,6 +1,14 @@
-import { useState, useCallback } from "react";
-import { GameShell, GameTopbar, GameAuth, GameButton } from "@freegamestore/games";
+import { useRef, useState, useCallback } from "react";
+import { GameShell, GameTopbar, GameAuth, GameButton, useGameSounds } from "@freegamestore/games";
 import { useHighScore } from "./hooks/useHighScore";
+
+type SoundsApi = ReturnType<typeof useGameSounds>;
+
+function AudioBridge({ apiRef }: { apiRef: React.MutableRefObject<SoundsApi | null> }) {
+  const sounds = useGameSounds();
+  apiRef.current = sounds;
+  return null;
+}
 
 type Suit = "♠" | "♥" | "♦" | "♣";
 type Rank = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
@@ -50,6 +58,7 @@ export default function App() {
   const [wins, setWins] = useState(0);
   const [streak, setStreak] = useState(0);
   const [bestStreak, updateHighScore] = useHighScore("war-best-streak");
+  const audioRef = useRef<SoundsApi | null>(null);
 
   const reset = useCallback(() => {
     const d = initialDecks();
