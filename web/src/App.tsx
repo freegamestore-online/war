@@ -172,6 +172,7 @@ export default function App() {
         />
       }
     >
+      <AudioBridge apiRef={audioRef} />
       <div className="flex flex-col items-center justify-center h-full gap-4 p-3 overflow-hidden">
         <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>CPU</div>
         <CardSlot card={cpuCard} />
