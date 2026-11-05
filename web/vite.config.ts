@@ -35,9 +35,9 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: "bubbleshooter",
-        short_name: "bubbleshooter",
-        description: "bubbleshooter — free forever",
+        name: "war",
+        short_name: "war",
+        description: "Free war card game — part of FreeGameStore",
         start_url: "/",
         display: "standalone", orientation: "any",
         background_color: "#0f0f0f",

@@ -1,6 +1,7 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { GameShell, GameTopbar, GameAuth, GameButton, useGameSounds } from "@freegamestore/games";
 import { useHighScore } from "./hooks/useHighScore";
+import { type Card, RANK_LABEL, initialDecks, playRound } from "./game";
 
 type SoundsApi = ReturnType<typeof useGameSounds>;
 
@@ -10,47 +11,11 @@ function AudioBridge({ apiRef }: { apiRef: React.MutableRefObject<SoundsApi | nu
   return null;
 }
 
-type Suit = "♠" | "♥" | "♦" | "♣";
-type Rank = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
-interface Card { rank: Rank; suit: Suit; }
-
-const SUITS: Suit[] = ["♠", "♥", "♦", "♣"];
-const RANKS: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
-const RANK_LABEL: Record<Rank, string> = {
-  2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8",
-  9: "9", 10: "10", 11: "J", 12: "Q", 13: "K", 14: "A",
-};
-
-function freshDeck(): Card[] {
-  const d: Card[] = [];
-  for (const s of SUITS) for (const r of RANKS) d.push({ rank: r, suit: s });
-  for (let i = d.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [d[i], d[j]] = [d[j]!, d[i]!];
-  }
-  return d;
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
-}
-
-function initialDecks(): { you: Card[]; cpu: Card[] } {
-  const deck = freshDeck();
-  return { you: deck.slice(0, 26), cpu: deck.slice(26) };
-}
-
 type Phase = "playing" | "over";
 
 export default function App() {
-  const initial = initialDecks();
-  const [you, setYou] = useState<Card[]>(initial.you);
-  const [cpu, setCpu] = useState<Card[]>(initial.cpu);
+  const [decks, setDecks] = useState(initialDecks);
+  const { you, cpu } = decks;
   const [yourCard, setYourCard] = useState<Card | null>(null);
   const [cpuCard, setCpuCard] = useState<Card | null>(null);
   const [phase, setPhase] = useState<Phase>("playing");
@@ -61,85 +26,69 @@ export default function App() {
   const audioRef = useRef<SoundsApi | null>(null);
 
   const reset = useCallback(() => {
-    const d = initialDecks();
-    setYou(d.you);
-    setCpu(d.cpu);
+    setDecks(initialDecks());
     setYourCard(null);
     setCpuCard(null);
     setPhase("playing");
     setMessage("Tap Draw to start.");
+    setWins(0);
     setStreak(0);
   }, []);
 
   const draw = useCallback(() => {
-    if (phase === "over") return;
-    const yc = you[0];
-    const cc = cpu[0];
-    if (!yc || !cc) return;
+    if (phase === "over" || you.length === 0 || cpu.length === 0) return;
+    const r = playRound(decks);
+    setDecks({ you: r.you, cpu: r.cpu });
+    setYourCard(r.yourCard);
+    setCpuCard(r.cpuCard);
 
-    const yRest = you.slice(1);
-    const cRest = cpu.slice(1);
-    let pile: Card[] = [yc, cc];
-
-    setYourCard(yc);
-    setCpuCard(cc);
-
-    if (yc.rank > cc.rank) {
-      setYou(yRest.concat(shuffle(pile)));
-      setCpu(cRest);
+    const war = r.wars === 0 ? "" : r.wars === 1 ? "WAR — " : `WAR ×${r.wars} — `;
+    if (r.winner === "you") {
       setWins((w) => w + 1);
-      setStreak((s) => { const ns = s + 1; updateHighScore(ns); return ns; });
-      setMessage(`Your ${RANK_LABEL[yc.rank]} beats ${RANK_LABEL[cc.rank]}.`);
-      if (cRest.length === 0) { setPhase("over"); setMessage("You took the deck. You win!"); }
-      return;
-    }
-    if (cc.rank > yc.rank) {
-      setYou(yRest);
-      setCpu(cRest.concat(shuffle(pile)));
+      const ns = streak + 1;
+      setStreak(ns);
+      updateHighScore(ns);
+      setMessage(r.wars === 0
+        ? `Your ${RANK_LABEL[r.yourCard.rank]} beats ${RANK_LABEL[r.cpuCard.rank]}.`
+        : `${war}your ${RANK_LABEL[r.yourCard.rank]} takes ${r.taken} cards.`);
+    } else if (r.winner === "cpu") {
       setStreak(0);
-      setMessage(`CPU's ${RANK_LABEL[cc.rank]} beats your ${RANK_LABEL[yc.rank]}.`);
-      if (yRest.length === 0) { setPhase("over"); setMessage("CPU took the deck."); }
-      return;
-    }
-
-    // War — each side burns 3 face-down, reveals 1
-    if (yRest.length < 4 || cRest.length < 4) {
-      setPhase("over");
-      setMessage(yRest.length < 4 ? "CPU wins the war." : "You win the war!");
-      return;
-    }
-    const yourBurn = yRest.slice(0, 3);
-    const cpuBurn = cRest.slice(0, 3);
-    const yourReveal = yRest[3]!;
-    const cpuReveal = cRest[3]!;
-    pile = pile.concat(yourBurn, cpuBurn, [yourReveal, cpuReveal]);
-    const yRest2 = yRest.slice(4);
-    const cRest2 = cRest.slice(4);
-    setYourCard(yourReveal);
-    setCpuCard(cpuReveal);
-
-    if (yourReveal.rank > cpuReveal.rank) {
-      setYou(yRest2.concat(shuffle(pile)));
-      setCpu(cRest2);
-      setWins((w) => w + 1);
-      setStreak((s) => { const ns = s + 1; updateHighScore(ns); return ns; });
-      setMessage(`WAR — your ${RANK_LABEL[yourReveal.rank]} takes ${pile.length} cards.`);
-    } else if (cpuReveal.rank > yourReveal.rank) {
-      setYou(yRest2);
-      setCpu(cRest2.concat(shuffle(pile)));
-      setStreak(0);
-      setMessage(`WAR — CPU's ${RANK_LABEL[cpuReveal.rank]} takes ${pile.length} cards.`);
+      setMessage(r.wars === 0
+        ? `CPU's ${RANK_LABEL[r.cpuCard.rank]} beats your ${RANK_LABEL[r.yourCard.rank]}.`
+        : `${war}CPU's ${RANK_LABEL[r.cpuCard.rank]} takes ${r.taken} cards.`);
     } else {
-      const half = Math.floor(pile.length / 2);
-      setYou(yRest2.concat(shuffle(pile.slice(0, half))));
-      setCpu(cRest2.concat(shuffle(pile.slice(half))));
-      setMessage("Double tie. Pile split.");
+      setMessage(`${war}both out of cards. Pile split.`);
     }
-    if (yRest2.length === 0 || cRest2.length === 0) {
+
+    if (r.cpu.length === 0) {
       setPhase("over");
-      setMessage(yRest2.length === 0 ? "CPU wins after war." : "You win after war!");
+      setMessage("You took the deck. You win!");
+      audioRef.current?.playLevelUp();
+    } else if (r.you.length === 0) {
+      setPhase("over");
+      setMessage("CPU took the deck.");
+      audioRef.current?.playGameOver();
+    } else if (r.winner === "you") {
+      audioRef.current?.playScore();
+    } else if (r.winner === "cpu") {
+      audioRef.current?.playError();
+    } else {
+      audioRef.current?.playTick();
     }
-  }, [you, cpu, phase, updateHighScore]);
+  }, [decks, you, cpu, phase, streak, updateHighScore]);
+
+  // Space (or Enter) draws; New Game when the game is over.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" && e.key !== "Enter") return;
+      if (e.repeat || (e.target instanceof Element && e.target.closest("button, a, input, textarea, select"))) return;
+      e.preventDefault();
+      if (phase === "over") reset();
+      else draw();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [phase, draw, reset]);
 
   return (
     <GameShell
@@ -158,11 +107,12 @@ export default function App() {
               <p>Each round, both draw one card. Higher card takes both.</p>
               <h4 style={{ marginTop: "0.75rem", fontWeight: 600 }}>Controls</h4>
               <ul style={{ paddingLeft: "1.2rem", marginTop: "0.25rem" }}>
-                <li>Tap Draw to play the top card from each deck</li>
+                <li>Tap Draw (or press Space) to play the top card from each deck</li>
               </ul>
               <h4 style={{ marginTop: "0.75rem", fontWeight: 600 }}>Rules</h4>
               <ul style={{ paddingLeft: "1.2rem", marginTop: "0.25rem" }}>
-                <li>Ace high. Two equal cards trigger a war: burn 3, reveal 1</li>
+                <li>Ace high. Two equal cards trigger a war: burn 3, reveal 1 (fewer if short on cards; another tie means another war)</li>
+                <li>Out of cards during a war = lose the war</li>
                 <li>Won cards go to the bottom of your deck (shuffled)</li>
                 <li>Run out of cards = lose. Streak counts consecutive round wins.</li>
               </ul>
